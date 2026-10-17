@@ -1,5 +1,6 @@
 //! File > Import recording: an MP3, WAV, FLAC or Ogg file becomes a new
 //! project that plays it, with a harmony track that follows its chords.
+//! And File > Import MIDI file, at the end.
 //!
 //! Listening takes a few seconds, so it runs on a thread of its own, like
 //! the WAV export, and the window keeps drawing meanwhile. The thread
@@ -13,7 +14,7 @@ use std::time::Duration;
 
 use eframe::egui;
 use loom_audio::PlayMode;
-use loom_core::Project;
+use loom_core::{Project, midi_file};
 use loom_listen::{arrange, decode_file};
 
 use super::LoomApp;
@@ -124,6 +125,46 @@ impl LoomApp {
                     self.notice = None;
                     self.message = Some("Importing failed".to_string());
                 }
+            }
+        }
+    }
+}
+
+/// File > Import MIDI file. Reading a MIDI file takes a few thousandths
+/// of a second, so unlike a recording it is done straight away.
+impl LoomApp {
+    /// Asks for a MIDI file, then imports it.
+    pub(super) fn import_midi(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("MIDI file", &midi_file::EXTENSIONS)
+            .pick_file()
+        {
+            self.import_midi_path(&path);
+        }
+    }
+
+    /// Makes a new project from the MIDI file at `path`, in song mode,
+    /// ready to play. Opening a MIDI file (`ferrous-loom song.mid`, or
+    /// dropping it on the window) comes here too.
+    pub(super) fn import_midi_path(&mut self, path: &Path) {
+        let title = path
+            .file_stem()
+            .map_or_else(|| "MIDI file".into(), |stem| stem.to_string_lossy());
+        let imported = std::fs::read(path)
+            .map_err(|err| err.to_string())
+            .and_then(|bytes| midi_file::read::read(&bytes).map_err(|err| err.to_string()))
+            .and_then(|file| {
+                midi_file::import::import(&file, &title).map_err(|err| err.to_string())
+            });
+        match imported {
+            Ok(imported) => {
+                let summary = imported.report.summary(&title, &imported.project);
+                self.replace_project(imported.project, None);
+                self.set_mode(PlayMode::Song);
+                self.notice = Some(summary);
+            }
+            Err(err) => {
+                self.message = Some(format!("Could not import {}: {err}", path.display()));
             }
         }
     }

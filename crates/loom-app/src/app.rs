@@ -768,6 +768,7 @@ impl LoomApp {
                         kind,
                         volume: 0.8,
                         muted: false,
+                        program: None,
                     });
                 }
             }

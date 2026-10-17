@@ -320,8 +320,10 @@ pub fn natural_size(
     egui::vec2(width + bar, hint + rows + add_channel + bar)
 }
 
-/// Whether a path ends in `.loom`.
+/// Whether a path opens as a project: a `.loom` file, or a MIDI file,
+/// which is imported.
 pub fn is_project_file(path: &std::path::Path) -> bool {
     path.extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case(file::EXTENSION))
+        || loom_core::midi_file::is_midi_file(path)
 }

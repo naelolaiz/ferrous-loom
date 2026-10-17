@@ -348,10 +348,8 @@ mod tests {
     fn a_seventh_chord_with_its_fifth_left_out() {
         // C, E and Bb with C in the bass: C7, as players often voice it.
         let note = |midi, len| NoteEvent {
-            pitch: crate::Note::new(midi),
-            start: 0,
-            length: len,
             velocity: 90,
+            ..NoteEvent::new(crate::Note::new(midi), 0, len)
         };
         let chords = [note(64, 16), note(70, 16), note(72, 16)];
         let bass = [note(36, 16)];

@@ -209,10 +209,8 @@ pub fn write_row(row: ToneRow, writing: &RowWriting, length: usize) -> Vec<NoteE
                     crate::DEFAULT_VELOCITY
                 };
                 notes.push(NoteEvent {
-                    pitch,
-                    start,
-                    length: lasts.min(length - start),
                     velocity,
+                    ..NoteEvent::new(pitch, start, lasts.min(length - start))
                 });
                 if i == 0 {
                     previous = Some(pitch);

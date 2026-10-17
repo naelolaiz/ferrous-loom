@@ -36,7 +36,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 use loom_core::{
     DEFAULT_VELOCITY, MAX_CHANNELS, MAX_PATTERNS, MidiMessage, Note, NoteEvent, Play, STEP_NOTE,
-    STEPS_PER_BAR, STEPS_PER_BEAT, Sequencer, Tempo,
+    STEPS_PER_BAR, STEPS_PER_BEAT, Sequencer, TICKS_PER_STEP, Tempo,
 };
 
 use crate::dsp::Smoothed;
@@ -1176,10 +1176,20 @@ fn start_pattern_notes(
             .iter()
             .filter(|note| note.start == origin.pattern_step)
         {
-            // A note that runs past the end of the pattern is cut there.
-            let steps_held = note.length.min(room);
-            let gate = (steps_held as f64 * timing.step_frames) as u32;
-            let late = delay(timing.loose_frames, index, origin.song_step, note.pitch) as u64;
+            // A note that runs past the end of the pattern is cut there,
+            // on the grid; otherwise it ends `trim` ticks before its last
+            // step does. A note `nudge` ticks off the grid starts that
+            // much late, as does each note with loose timing.
+            let tick = timing.step_frames / TICKS_PER_STEP as f64;
+            let held = if note.length <= room {
+                note.length as f64 * timing.step_frames - f64::from(note.nudge + note.trim) * tick
+            } else {
+                room as f64 * timing.step_frames - f64::from(note.nudge) * tick
+            };
+            let gate = held as u32;
+            let late = (f64::from(note.nudge) * tick
+                + delay(timing.loose_frames, index, origin.song_step, note.pitch))
+                as u64;
             // A full list never grows (that would allocate): the note
             // then starts on time.
             if late > 0 && pending.len() < pending.capacity() {
@@ -1555,6 +1565,55 @@ mod tests {
         assert_ne!(late[1] - 4 * STEP, late[2] - 8 * STEP, "{late:?}");
         // The same every time.
         assert_eq!(loose(20), late);
+    }
+
+    #[test]
+    fn notes_between_steps_start_on_their_tick() {
+        // Eighth-note triplets: three notes a beat, every 32 ticks.
+        let mut h = harness();
+        let triplets: Vec<NoteEvent> = (0..3)
+            .map(|n| NoteEvent::exact(STEP_NOTE, n * 32, 8))
+            .collect();
+        send(
+            &mut h,
+            Command::InsertChannel {
+                index: AT_END,
+                instrument: click(),
+                notes: ChannelNotes::new([triplets]),
+                volume: 1.0,
+                muted: false,
+            },
+        );
+        send(&mut h, Command::Play);
+        // A tick is a 24th of a step: 250 frames.
+        let tick = STEP / TICKS_PER_STEP;
+        assert_eq!(onsets(&render(&mut h, 4 * STEP)), [0, 32 * tick, 64 * tick]);
+    }
+
+    #[test]
+    fn a_trimmed_note_is_let_go_early() {
+        // From a quarter of a step in, held for half a step, or to the
+        // end of its second step.
+        let tick = STEP / TICKS_PER_STEP;
+        let loudness = |note: NoteEvent| {
+            let mut h = harness();
+            add_synth(&mut h, &[note]);
+            send(&mut h, Command::Play);
+            let out = render(&mut h, 2 * STEP);
+            assert!(
+                out[..6 * tick].iter().all(|&s| s == 0.0),
+                "silent until it starts"
+            );
+            // How loud it is just before the longer one is let go.
+            out[29 * tick..30 * tick]
+                .iter()
+                .fold(0.0f32, |m, s| m.max(s.abs()))
+        };
+        let short = NoteEvent::exact(Note::A4, 6, 12);
+        let long = NoteEvent::exact(Note::A4, 6, 24);
+        assert_eq!((short.length, long.length), (1, 2));
+        // Let go 3000 frames earlier, it has faded to under half.
+        assert!(loudness(short) < 0.6 * loudness(long));
     }
 
     /// All 16 steps of a pattern, once, from song step `start`.

@@ -106,10 +106,8 @@ impl Rhythm {
                 if let (Some((velocity, shift)), true) = (hit, at < length) {
                     let pitch = STEP_NOTE.transpose(*shift).unwrap_or(STEP_NOTE);
                     notes.push(NoteEvent {
-                        pitch,
-                        start: at,
-                        length: 1,
                         velocity: *velocity,
+                        ..NoteEvent::new(pitch, at, 1)
                     });
                 }
             }

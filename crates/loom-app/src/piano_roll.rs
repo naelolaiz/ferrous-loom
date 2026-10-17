@@ -16,7 +16,7 @@ use loom_core::harmony::{Harmony, HintLevel, analyze, next_chords};
 use loom_core::tools::{self, ArpeggioOrder};
 use loom_core::{
     Chord, ChordQuality, ChordStamp, Note, NoteEvent, Pattern, PitchClass, PitchSet, Project,
-    Scale, ScaleKind, Spelling, TimeSignature, tidy_notes,
+    Scale, ScaleKind, Spelling, TICKS_PER_STEP, TimeSignature, tidy_notes,
 };
 
 use crate::micromodes::{self, MicroAction, MicromodeWindow};
@@ -186,6 +186,7 @@ enum Tool {
     Transpose(i32),
     InKey(i32),
     Shift(isize),
+    Quantize,
     SnapToKey,
     Invert { up: bool },
     Arpeggiate,
@@ -255,13 +256,18 @@ impl Grid {
         self.rect.top() + (HIGHEST - midi) as f32 * self.row_height
     }
 
+    /// Where a note is drawn: from its exact start to its exact end, so
+    /// a triplet sits between two steps, as it is heard.
     fn note_rect(self, note: &NoteEvent) -> Rect {
         let top = self.row_top(note.pitch.midi());
-        let end = note.end().min(self.length);
-        Rect::from_min_max(
-            pos2(self.x(note.start), top),
-            pos2(self.x(end), top + self.row_height),
-        )
+        let tick = self.step_width / TICKS_PER_STEP as f32;
+        let start = self.x(note.start) + f32::from(note.nudge) * tick;
+        let end = if note.end() > self.length {
+            self.x(self.length)
+        } else {
+            self.x(note.end()) - f32::from(note.trim) * tick
+        };
+        Rect::from_min_max(pos2(start, top), pos2(end, top + self.row_height))
     }
 
     /// The step and pitch under a point. Points outside the grid give the
@@ -1174,6 +1180,7 @@ impl PianoRoll {
             item(ui, "A step later", Tool::Shift(1), Some(KEY_RIGHT));
             item(ui, "A beat earlier", Tool::Shift(-4), Some(BEAT_LEFT));
             item(ui, "A beat later", Tool::Shift(4), Some(BEAT_RIGHT));
+            item(ui, "Quantize to the steps", Tool::Quantize, None);
             ui.separator();
             item(ui, "Snap to the key", Tool::SnapToKey, None);
             item(ui, "Invert chords up", Tool::Invert { up: true }, None);
@@ -1829,10 +1836,16 @@ impl PianoRoll {
                     start: step.saturating_sub(grab),
                     ..note
                 },
+                // A resized note ends on the grid, where the pointer is.
                 Drag::Resize { .. } => {
                     let length = (step + 1).saturating_sub(note.start).max(1);
                     self.note_length = length;
-                    NoteEvent { length, ..note }
+                    let trim = if length == note.length { note.trim } else { 0 };
+                    NoteEvent {
+                        length,
+                        trim,
+                        ..note
+                    }
                 }
             };
             if changed != note {
@@ -1924,7 +1937,8 @@ impl PianoRoll {
         let bar_width = (step_width * 0.4).clamp(2.0, 8.0);
         for note in notes.iter().filter(|note| note.start < length) {
             let height = lane.rect.height() * f32::from(note.velocity) / 127.0;
-            let left = lane.x(note.start) + 2.0;
+            let nudge = f32::from(note.nudge) * step_width / TICKS_PER_STEP as f32;
+            let left = lane.x(note.start) + nudge + 2.0;
             let bar = Rect::from_min_max(
                 pos2(left, lane.rect.bottom() - height),
                 pos2(left + bar_width, lane.rect.bottom()),
@@ -2035,6 +2049,7 @@ impl PianoRoll {
                 tools::transpose_in_key(&targets, scale, steps),
             ),
             Tool::Shift(steps) => ("move notes", tools::shift(&targets, steps, length)),
+            Tool::Quantize => ("quantize notes", Some(tools::quantize(&targets, length))),
             Tool::SnapToKey => (
                 "snap notes to key",
                 Some(tools::snap_to_scale(&targets, scale)),

@@ -35,10 +35,8 @@ pub fn recorded_note(pitch: Note, velocity: u8, from: f64, until: f64, length: u
     let start_step = start as usize % length;
     let steps = ((end - start) as usize).min(length - start_step);
     NoteEvent {
-        pitch,
-        start: start_step,
-        length: steps,
         velocity,
+        ..NoteEvent::new(pitch, start_step, steps)
     }
 }
 

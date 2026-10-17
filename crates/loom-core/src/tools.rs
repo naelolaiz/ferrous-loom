@@ -51,6 +51,29 @@ pub fn shift(notes: &[NoteEvent], steps: isize, pattern_length: usize) -> Option
         .collect()
 }
 
+/// Moves every note onto the grid: its start and its end to the nearest
+/// step, as FL Studio's quantize does. A note that would then start at
+/// the end of the pattern starts on its last step instead.
+///
+/// Notes recorded by hand or imported from a MIDI file are often a
+/// little off the grid, which is how people play; quantizing makes them
+/// as exact as a drum machine.
+pub fn quantize(notes: &[NoteEvent], pattern_length: usize) -> Vec<NoteEvent> {
+    let last = pattern_length.saturating_sub(1);
+    notes
+        .iter()
+        .map(|note| {
+            let quantized = note.quantized();
+            let start = quantized.start.min(last);
+            NoteEvent {
+                start,
+                length: quantized.end() - start,
+                ..quantized
+            }
+        })
+        .collect()
+}
+
 /// The nearest note of the scale above `note` (or below, if `up` is
 /// false), not counting `note` itself.
 pub fn step_in_key(note: Note, scale: Scale, up: bool) -> Option<Note> {
@@ -279,6 +302,21 @@ pub fn arpeggiate(notes: &[NoteEvent], order: ArpeggioOrder, rate: usize) -> Vec
 mod tests {
     use super::*;
     use crate::{PitchClass, ScaleKind};
+
+    #[test]
+    fn quantizing_moves_notes_to_the_nearest_steps() {
+        let c4 = Note::C4;
+        // Eighth-note triplets: ticks 0, 32 and 64, each 32 ticks long.
+        let triplets: Vec<NoteEvent> = (0..3).map(|n| NoteEvent::exact(c4, n * 32, 32)).collect();
+        let quantized = quantize(&triplets, 16);
+        let places: Vec<(usize, usize)> = quantized.iter().map(|n| (n.start, n.length)).collect();
+        // 32 ticks is 1 1/3 steps, so they land on steps 0, 1 and 3.
+        assert_eq!(places, [(0, 1), (1, 2), (3, 1)]);
+        assert!(quantized.iter().all(NoteEvent::is_on_grid));
+        // A note very late in the last step stays in the pattern.
+        let late = NoteEvent::exact(c4, 15 * 24 + 20, 4);
+        assert_eq!(quantize(&[late], 16)[0].start, 15);
+    }
 
     fn note(midi: u8, start: usize, length: usize) -> NoteEvent {
         NoteEvent::new(Note::new(midi), start, length)

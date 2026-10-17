@@ -34,6 +34,7 @@ pub(super) enum Pending {
     OpenPath(PathBuf),
     Demo(Demo),
     Import,
+    ImportMidi,
     Quit,
 }
 
@@ -123,6 +124,14 @@ impl LoomApp {
                 .clicked()
             {
                 self.request(&ctx, Pending::Import);
+                ui.close();
+            }
+            if ui
+                .button("Import MIDI file…")
+                .on_hover_text("Open a .mid file: its notes, tempo, time signatures and key")
+                .clicked()
+            {
+                self.request(&ctx, Pending::ImportMidi);
                 ui.close();
             }
             ui.separator();
@@ -217,6 +226,7 @@ impl LoomApp {
             Pending::OpenPath(path) => self.open_now(path),
             Pending::Demo(demo) => self.open_demo(demo),
             Pending::Import => self.import_recording(),
+            Pending::ImportMidi => self.import_midi(),
             Pending::Quit => {
                 self.file.quitting = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -227,6 +237,10 @@ impl LoomApp {
     fn open_now(&mut self, path: PathBuf) {
         if loom_listen::is_audio_file(&path) {
             self.import_path(path);
+            return;
+        }
+        if loom_core::midi_file::is_midi_file(&path) {
+            self.import_midi_path(&path);
             return;
         }
         match file::load(&path) {

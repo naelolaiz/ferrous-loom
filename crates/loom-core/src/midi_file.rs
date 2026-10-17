@@ -19,12 +19,37 @@ use crate::midi::{DRUM_CHANNEL, MidiMessage};
 use crate::project::{Channel, ChannelKind, Drum, Project, SampleSource};
 use crate::{Note, STEPS_PER_BEAT, Scale, Tempo};
 
+pub mod import;
+pub mod read;
+
 /// How many ticks one beat (a quarter note) is divided into. 96 is a
 /// common choice: it divides by 2, 3, 4, 8, 16 and 32.
 pub const TICKS_PER_BEAT: u16 = 96;
 
-/// How many ticks one step (a sixteenth note) lasts: 24.
-pub const TICKS_PER_STEP: u32 = TICKS_PER_BEAT as u32 / STEPS_PER_BEAT;
+/// How many ticks one step (a sixteenth note) lasts: 24, the same ticks
+/// a note's `nudge` and `trim` are counted in, so a note between two
+/// steps is written exactly where it plays.
+pub const TICKS_PER_STEP: u32 = crate::pattern::TICKS_PER_STEP as u32;
+
+// A check made while compiling: if someone changed one of the two
+// numbers and not the other, the build would stop here.
+const _: () = assert!(TICKS_PER_BEAT as u32 == TICKS_PER_STEP * STEPS_PER_BEAT);
+
+/// The file extensions of MIDI files: `.mid` and `.midi`, `.kar` for
+/// karaoke files (MIDI files with lyrics), and `.rmi` for MIDI files in a
+/// RIFF container.
+pub const EXTENSIONS: [&str; 4] = ["mid", "midi", "kar", "rmi"];
+
+/// Whether `path` names a MIDI file, going by its extension.
+pub fn is_midi_file(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            EXTENSIONS
+                .iter()
+                .any(|known| extension.eq_ignore_ascii_case(known))
+        })
+}
 
 /// The whole song, as the playlist plays it: every clip on a track that
 /// is not muted, every channel that is not muted, with every repeat of
@@ -172,12 +197,14 @@ fn channel_events(
             for song_step in play.song_steps_of(note.start, length) {
                 // As in the audio thread: a note that runs past the end of
                 // its pattern, or of the piece being played, is cut there.
-                let held = note
-                    .length
-                    .min(length - note.start)
-                    .min(play.end() - song_step);
-                let on = song_step as u32 * TICKS_PER_STEP;
-                let off = on + held as u32 * TICKS_PER_STEP;
+                let room = (length - note.start).min(play.end() - song_step);
+                let step = song_step as u32 * TICKS_PER_STEP;
+                let on = step + u32::from(note.nudge);
+                let off = if note.length <= room {
+                    on + note.ticks() as u32
+                } else {
+                    step + room as u32 * TICKS_PER_STEP
+                };
                 let pitch = drum.map_or(note.pitch, general_midi_drum);
                 events.push((
                     on,

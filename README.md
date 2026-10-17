@@ -134,6 +134,13 @@ and the harmony keys follow along. This is an early experiment; see
 [`crates/loom-listen`](crates/loom-listen/README.md) for how it works and
 how often it is right.
 
+**File > Import MIDI file…** opens a `.mid` file (or drop it on the
+window) as a new project: each track becomes a channel (the drums of
+channel 10 one channel per drum), every note keeps its velocity and its
+exact time, even between two steps, and the tempo changes, time
+signatures and key come with it. The piano roll's Chords lane and the
+harmony keys then name the chords as it plays.
+
 Too small or too big? As in FL Studio, the playlist and the piano roll
 zoom each direction on its own: **Ctrl** with the mouse wheel makes bars
 and steps wider or narrower, and **Alt** with the wheel makes tracks and

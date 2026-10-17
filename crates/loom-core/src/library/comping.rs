@@ -333,10 +333,8 @@ impl Comping {
             return voicing
                 .iter()
                 .map(|&pitch| NoteEvent {
-                    pitch,
-                    start,
-                    length: span,
                     velocity: 88,
+                    ..NoteEvent::new(pitch, start, span)
                 })
                 .collect();
         }
@@ -351,10 +349,8 @@ impl Comping {
                 let length = hit.len.min(span - at);
                 for pitch in pick(voicing, hit.what) {
                     notes.push(NoteEvent {
-                        pitch,
-                        start: start + at,
-                        length,
                         velocity: hit.velocity,
+                        ..NoteEvent::new(pitch, start + at, length)
                     });
                 }
             }
@@ -546,10 +542,8 @@ impl Bass {
     /// `next` is the chord after it, which some lines lead into.
     pub fn play(self, chord: Chord, next: Chord, start: usize, span: usize) -> Vec<NoteEvent> {
         let note = |tone: Tone, at: usize, length: usize, velocity: u8| NoteEvent {
-            pitch: tone_note(tone, chord, next),
-            start: start + at,
-            length,
             velocity,
+            ..NoteEvent::new(tone_note(tone, chord, next), start + at, length)
         };
         match self {
             Bass::None => Vec::new(),

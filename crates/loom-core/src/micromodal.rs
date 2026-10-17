@@ -243,10 +243,8 @@ pub fn write_forms(
         return notes;
     }
     let event = |pitch: Note, start: usize, lasts: usize| NoteEvent {
-        pitch,
-        start,
-        length: lasts.min(length - start).max(1),
         velocity: writing.velocity,
+        ..NoteEvent::new(pitch, start, lasts.min(length - start).max(1))
     };
     let mut chord: Vec<Note> = Vec::new();
     let mut last: Option<Note> = None;

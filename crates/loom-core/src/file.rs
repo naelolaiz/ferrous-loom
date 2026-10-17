@@ -73,7 +73,13 @@ pub const EXTENSION: &str = "loom";
 /// Format 7 added tempo changes through a song, and loose timing. Older
 /// versions would play the whole song at its first tempo, and every
 /// note on the grid, so a song that uses either needs format 7.
-pub const FORMAT_VERSION: u32 = 7;
+///
+/// Format 8 added notes that start or end between two steps, such as
+/// the triplets of an imported MIDI file (see [`NoteEvent::nudge`]).
+/// Older versions would move them onto the grid, so a project with one
+/// needs format 8. Format 8 also added a channel's General MIDI program
+/// ([`Channel::program`]), which older versions would drop.
+pub const FORMAT_VERSION: u32 = 8;
 
 /// The oldest format that can hold `project`.
 ///
@@ -104,7 +110,17 @@ pub fn format_for(project: &Project) -> u32 {
     let has_structure = !playlist.sections().is_empty()
         || playlist.loop_region().is_some()
         || playlist.clips().iter().any(|clip| clip.repeats != 1);
-    if !playlist.tempo_markers().is_empty() || project.loose_timing > 0 {
+    let has_notes_off_the_grid = project
+        .patterns()
+        .iter()
+        .any(|pattern| pattern.all_notes().any(|(_, note)| !note.is_on_grid()));
+    let has_programs = project
+        .channels()
+        .iter()
+        .any(|channel| channel.program.is_some());
+    if has_notes_off_the_grid || has_programs {
+        8
+    } else if !playlist.tempo_markers().is_empty() || project.loose_timing > 0 {
         7
     } else if !project.scale.kind.is_tonal() {
         6
@@ -502,10 +518,10 @@ mod tests {
 
     #[test]
     fn files_from_the_future_are_refused() {
-        // Format 8 might have fields we have never heard of. Only the
+        // Format 9 might have fields we have never heard of. Only the
         // header is read, so the rest does not matter.
-        let error = from_text("(format: 8, sparkles: true)").unwrap_err();
-        assert!(matches!(error, FileError::NewerFormat(8)), "{error}");
+        let error = from_text("(format: 9, sparkles: true)").unwrap_err();
+        assert!(matches!(error, FileError::NewerFormat(9)), "{error}");
     }
 
     #[test]
@@ -630,6 +646,37 @@ mod tests {
         let text = to_text(&loose).unwrap();
         assert!(text.contains("format: 7,"), "{text}");
         assert_eq!(from_text(&text).unwrap(), loose);
+    }
+
+    #[test]
+    fn notes_off_the_grid_need_format_eight() {
+        let mut project = Project::demo();
+        let synth = 4;
+        let text = to_text(&project).unwrap();
+        assert!(!text.contains("nudge"), "notes on the grid read as before");
+        // A triplet note, 8 ticks late, held 32 ticks.
+        let triplet = crate::NoteEvent::exact(crate::Note::C4, 32, 32);
+        project.pattern_mut(0).unwrap().add_note(synth, triplet);
+        let text = to_text(&project).unwrap();
+        assert!(text.contains("format: 8,"), "{text}");
+        assert!(text.contains("nudge: 8"), "{text}");
+        assert!(text.contains("trim: 8"), "{text}");
+        assert_eq!(from_text(&text).unwrap(), project);
+    }
+
+    #[test]
+    fn a_general_midi_program_needs_format_eight() {
+        let mut project = Project::demo();
+        let text = to_text(&project).unwrap();
+        assert!(
+            !text.contains("program"),
+            "channels without one read as before"
+        );
+        project.channel_mut(4).unwrap().program = Some(40);
+        let text = to_text(&project).unwrap();
+        assert!(text.contains("format: 8,"), "{text}");
+        assert!(text.contains("program: Some(40)"), "{text}");
+        assert_eq!(from_text(&text).unwrap(), project);
     }
 
     #[test]

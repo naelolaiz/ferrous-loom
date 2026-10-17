@@ -128,6 +128,7 @@ pub fn follow(analysis: &Analysis, lead_in: LeadIn, wav: PathBuf, title: &str) -
             kind: ChannelKind::Sampler(SampleSource::File(wav)),
             volume: 0.8,
             muted: false,
+            program: None,
         })
         .unwrap_or(0);
     let harmony = project

@@ -111,10 +111,8 @@ pub fn parse_melody(text: &str) -> Option<Melody> {
             notes.last_mut()?.length += length;
         } else if name != "-" {
             notes.push(NoteEvent {
-                pitch: note_named(name)?,
-                start: at,
-                length,
                 velocity: DEFAULT_VELOCITY,
+                ..NoteEvent::new(note_named(name)?, at, length)
             });
         }
         at += length;

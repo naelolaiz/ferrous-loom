@@ -12,10 +12,13 @@
 //!   of notes, chord or not: music after tonality.
 //! - [`Micromode`] is one of Francisco Kröpfl's twelve groups of three
 //!   notes, the smallest sets, which larger sets are made of.
+//! - [`key_fits`] finds the key a piece is in from how long each note
+//!   sounds.
 
 mod analysis;
 mod chord;
 mod hints;
+mod key_finding;
 pub mod keys;
 mod micromode;
 mod pitch_set;
@@ -27,6 +30,7 @@ mod set_class;
 pub use analysis::{Harmony, analyze, interval_name};
 pub use chord::{Chord, ChordFamily, ChordQuality, ChordStamp};
 pub use hints::HintLevel;
+pub use key_finding::key_fits;
 pub use micromode::{Micromode, MicromodeFamily, micromode_content, micromodes_in, trichords};
 pub use pitch_set::PitchSet;
 pub use progression::{Suggestion, next_chords};
